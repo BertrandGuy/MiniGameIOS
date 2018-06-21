@@ -9,11 +9,22 @@
 import SpriteKit
 import GameplayKit
 
+enum GameState {
+    case showingLogo
+    case playing
+    case dead
+}
+
 class GameScene: SKScene, SKPhysicsContactDelegate{
+    
+    var logo: SKLabelNode!
+    var gameOver: SKLabelNode!
+    
+    var gameState = GameState.showingLogo
     
     var player: SKSpriteNode!
     var scoreLabel: SKLabelNode!
-    
+    var timer = Timer()
     var score = 0 {
         didSet {
             scoreLabel.text = "SCORE: \(score)"
@@ -22,23 +33,47 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
     
     override func didMove(to view: SKView)
     {
+        createLogos()
         createPlayer()
         createSky()
         createGround()
         createBackground()
-        createRocks()
         createScore()
+        
         physicsWorld.gravity = CGVector(dx: 0.0, dy: -5.0)
         physicsWorld.contactDelegate = self
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?)
     {
-        player.physicsBody?.velocity = CGVector(dx: 0, dy: 0)
-        player.physicsBody?.applyImpulse(CGVector(dx: 0, dy: 20))
+        switch gameState {
+        case .showingLogo:
+            gameState = .playing
+            
+            let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+            let remove = SKAction.removeFromParent()
+            let wait = SKAction.wait(forDuration: 0.5)
+            let activatePlayer = SKAction.run { [unowned self] in
+                self.player.physicsBody?.isDynamic = true
+                self.startRocks()
+            }
+            
+            let sequence = SKAction.sequence([fadeOut, wait, activatePlayer, remove])
+            logo.run(sequence)
+            
+        case .playing:
+            player.physicsBody?.velocity = CGVector(dx: 0, dy: 0)
+            player.physicsBody?.applyImpulse(CGVector(dx: 0, dy: 20))
+            
+        case .dead:
+            let scene = GameScene(fileNamed: "GameScene")!
+            let transition = SKTransition.moveIn(with: SKTransitionDirection.right, duration: 1)
+            self.view?.presentScene(scene, transition: transition)
+        }
     }
     
     override func update(_ currentTime: TimeInterval) {
+        guard player != nil else { return }
         let value = player.physicsBody!.velocity.dy * 0.001
         let rotate = SKAction.rotate(toAngle: value, duration: 0.1)
         
@@ -52,9 +87,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
             } else {
                 contact.bodyA.node?.removeFromParent()
             }
-            
-            let sound = SKAction.playSoundFileNamed("coin.wav", waitForCompletion: false)
-            run(sound)
             
             score += 1
             
@@ -70,13 +102,30 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
                 explosion.position = player.position
                 addChild(explosion)
             }
-            
-            let sound = SKAction.playSoundFileNamed("explosion.wav", waitForCompletion: false)
-            run(sound)
-            
+
+            //gameOver.alpha = 1
+            gameState = .dead
+
             player.removeFromParent()
             speed = 0
         }
+    }
+    
+    func createLogos() {
+        logo = SKLabelNode(fontNamed: "Optima-ExtraBlack")
+        logo.fontSize = 24
+        logo.position = CGPoint(x: frame.midX, y: frame.midY)
+        logo.text = "Start !"
+        logo.fontColor = UIColor.black
+        
+        addChild(logo)
+        
+//        gameOver = SKLabelNode(fontNamed: "Optima-ExtraBlack")
+//        gameOver.fontSize = 24
+//        gameOver.position = CGPoint(x: frame.midX, y: frame.midY)
+//        gameOver.text = "Game Over ..."
+//        gameOver.fontColor = UIColor.black
+//        addChild(gameOver)
     }
     
     func createPlayer()
@@ -90,8 +139,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         
         player.physicsBody = SKPhysicsBody(texture: playerTexture, size: playerTexture.size())
         player.physicsBody!.contactTestBitMask = player.physicsBody!.collisionBitMask
-        player.physicsBody?.isDynamic = true
-
+        player.physicsBody?.isDynamic = false
+        
         let animation = SKAction.animate(with: [playerTexture], timePerFrame: 0.01)
         let runForever = SKAction.repeatForever(animation)
 
@@ -169,46 +218,39 @@ class GameScene: SKScene, SKPhysicsContactDelegate{
         run(repeatForever)
     }
     
-    func createRocks() {
-        // 1
+    @objc func createRocks() {
         let rockTexture = SKTexture(imageNamed: "rock")
         
         let topRock = SKSpriteNode(texture: rockTexture)
-        topRock.zRotation = .pi
-        topRock.xScale = -1.0
         topRock.physicsBody = SKPhysicsBody(texture: rockTexture, size: rockTexture.size())
         topRock.physicsBody?.isDynamic = false
-
-        let bottomRock = SKSpriteNode(texture: rockTexture)
+        topRock.zRotation = .pi
+        topRock.xScale = -1.0
         
-        topRock.zPosition = -2
-        bottomRock.zPosition = -2
+        let bottomRock = SKSpriteNode(texture: rockTexture)
         bottomRock.physicsBody = SKPhysicsBody(texture: rockTexture, size: rockTexture.size())
         bottomRock.physicsBody?.isDynamic = false
+        topRock.zPosition = -20
         
-        // 2
         let rockCollision = SKSpriteNode(color: UIColor.red, size: CGSize(width: 32, height: frame.height))
-        rockCollision.name = "scoreDetect"
-        
         rockCollision.physicsBody = SKPhysicsBody(rectangleOf: rockCollision.size)
         rockCollision.physicsBody?.isDynamic = false
+        rockCollision.name = "scoreDetect"
+        rockCollision.alpha = 0
         
         addChild(topRock)
         addChild(bottomRock)
         addChild(rockCollision)
         
-        // 3
         let xPosition = frame.width + topRock.frame.width
         
         let max = Int(frame.height / 3)
         let rand = GKRandomDistribution(lowestValue: -50, highestValue: max)
         let yPosition = CGFloat(rand.nextInt())
         
-        // this next value affects the width of the gap between rocks
-        // make it smaller to make your game harder – if you're feeling evil!
+
         let rockDistance: CGFloat = 70
         
-        // 4
         topRock.position = CGPoint(x: xPosition, y: yPosition + topRock.size.height + rockDistance)
         bottomRock.position = CGPoint(x: xPosition, y: yPosition - rockDistance)
         rockCollision.position = CGPoint(x: xPosition + (rockCollision.size.width * 2), y: frame.midY)
